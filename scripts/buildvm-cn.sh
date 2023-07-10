@@ -4,24 +4,26 @@
 # 2023.06.29
 
 
-# ./buildvm.sh VMID 用户名 密码 CPU核数 内存 硬盘 SSH端口 80端口 443端口 外网端口起 外网端口止 系统 存储盘
-# ./buildvm.sh 102 test1 1234567 1 512 5 40001 40002 40003 50000 50025 debian11 local
+# ./buildvm.sh VMID 用户名 密码 CPU核数 内存 硬盘 SSH端口 外网端口起 外网端口止 系统 存储盘 网桥 IP段 网关 DNS
+# ./buildvm.sh 102 root 1234567 1 512 5 40001 50000 50025 debian11 local vmbr0 172.103.0 172.103.0.1 223.5.5.5
 
 cd /root >/dev/null 2>&1
 # 创建NAT的虚拟机
 vm_num="${1:-102}"
-user="${2:-test}"
-password="${3:-123456}"
+user="${2:-root}"
+password="${3:-1234567}"
 core="${4:-1}"
 memory="${5:-512}"
 disk="${6:-5}"
 sshn="${7:-40001}"
-web1_port="${8:-40002}"
-web2_port="${9:-40003}"
 port_first="${10:-49975}"
 port_last="${11:-50000}"
-system="${12:-debian10}"
+system="${12:-debian11}"
 storage="${13:-local}"
+vmbr="${14:-vmbr0}"
+netmask="${15:-172.103.0.}"
+netgw="${16:-172.103.0.1}"
+dns="${17:-223.5.5.5}"
 # in="${12:-300}"
 # out="${13:-300}"
 rm -rf "vm$name"
@@ -101,26 +103,23 @@ else
     num=$((first_digit - 2))$second_digit$third_digit
 fi
 
-qm create $vm_num --agent 1 --scsihw virtio-scsi-single --serial0 socket --cores $core --sockets 1 --cpu host --net0 virtio,bridge=vmbr1,firewall=0
+qm create $vm_num --agent 1 --scsihw virtio-scsi-single --cores $core --sockets 1 --cpu host --net0 virtio,bridge=${vmbr},firewall=0
 qm importdisk $vm_num /root/qcow/${system}.qcow2 ${storage}
-qm set $vm_num --scsihw virtio-scsi-pci --scsi0 ${storage}:${vm_num}/vm-${vm_num}-disk-0.raw
+qm set $vm_num --scsihw virtio-scsi-single --scsi0 ${storage}:${vm_num}/vm-${vm_num}-disk-0.raw
 qm set $vm_num --bootdisk scsi0
 qm set $vm_num --boot order=scsi0
 qm set $vm_num --memory $memory
 # --swap 256
 qm set $vm_num --ide2 ${storage}:cloudinit
-qm set $vm_num --nameserver 8.8.8.8
-qm set $vm_num --searchdomain 8.8.4.4
-user_ip="172.16.1.${num}"
-qm set $vm_num --ipconfig0 ip=${user_ip}/24,gw=172.16.1.1
+qm set $vm_num --nameserver ${dns}
+user_ip="${netmask}.${num}"
+qm set $vm_num --ipconfig0 ip=${user_ip}/24,gw=${netgw}
 qm set $vm_num --cipassword $password --ciuser $user
 # qm set $vm_num --agent 1
 qm resize $vm_num scsi0 ${disk}G
 qm start $vm_num
 
 iptables -t nat -A PREROUTING -p tcp --dport ${sshn} -j DNAT --to-destination ${user_ip}:22
-iptables -t nat -A PREROUTING -p tcp -m tcp --dport ${web1_port} -j DNAT --to-destination ${user_ip}:80
-iptables -t nat -A PREROUTING -p tcp -m tcp --dport ${web2_port} -j DNAT --to-destination ${user_ip}:443
 iptables -t nat -A PREROUTING -p tcp -m tcp --dport ${port_first}:${port_last} -j DNAT --to-destination ${user_ip}:${port_first}-${port_last}
 iptables -t nat -A PREROUTING -p udp -m udp --dport ${port_first}:${port_last} -j DNAT --to-destination ${user_ip}:${port_first}-${port_last}
 if [ ! -f "/etc/iptables/rules.v4" ]; then
@@ -128,9 +127,9 @@ if [ ! -f "/etc/iptables/rules.v4" ]; then
 fi
 iptables-save > /etc/iptables/rules.v4
 service netfilter-persistent restart
-echo "$vm_num $user $password $core $memory $disk $sshn $web1_port $web2_port $port_first $port_last $system $storage" >> "vm${vm_num}"
+echo "$vm_num $user $password $core $memory $disk $sshn $port_first $port_last $system $storage $vmbr $netmask $netgw $dns" >> "vm${vm_num}"
 # 虚拟机的相关信息将会存储到对应的虚拟机的NOTE中，可在WEB端查看
-data=$(echo " VMID 用户名-username 密码-password CPU核数-CPU 内存-memory 硬盘-disk SSH端口 80端口 443端口 外网端口起-port-start 外网端口止-port-end 系统-system 存储盘-storage")
+data=$(echo " VMID 用户名-username 密码-password CPU核数-CPU 内存-memory 硬盘-disk SSH端口 外网端口起-port-start 外网端口止-port-end 系统-system 存储盘-storage 网桥-vmbr IP段-172.103.0 网关-172.103.0.1 DNS-223.5.5.5")
 values=$(cat "vm${vm_num}")
 IFS=' ' read -ra data_array <<< "$data"
 IFS=' ' read -ra values_array <<< "$values"
