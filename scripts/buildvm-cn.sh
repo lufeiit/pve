@@ -5,7 +5,7 @@
 
 
 # ./buildvm.sh VMID 用户名 密码 CPU核数 内存 硬盘 SSH端口 外网端口起 外网端口止 系统 存储盘 网桥 IP段 网关 DNS
-# ./buildvm.sh 102 root 1234567 1 512 5 40001 50000 50025 debian11 local vmbr0 172.103.0 172.103.0.1 223.5.5.5
+# ./buildvm.sh 102 root 1234567 1 512 5 40001 50000 50025 debian11 local vmbr0 172.103.0.100 172.103.0.1 223.5.5.5
 
 cd /root >/dev/null 2>&1
 # 创建NAT的虚拟机
@@ -21,7 +21,7 @@ port_last="${9:-50000}"
 system="${10:-debian11}"
 storage="${11:-local}"
 vmbr="${12:-vmbr0}"
-netmask="${13:-172.103.0.}"
+netip="${13:-172.103.0.100}"
 netgw="${14:-172.103.0.1}"
 dns="${15:-223.5.5.5}"
 # in="${12:-300}"
@@ -109,10 +109,12 @@ qm set $vm_num --scsihw virtio-scsi-single --scsi0 ${storage}:${vm_num}/vm-${vm_
 qm set $vm_num --bootdisk scsi0
 qm set $vm_num --boot order=scsi0
 qm set $vm_num --memory $memory
+qm set $vm_num --name $netip
+qm set $vm_num --onboot 1
 # --swap 256
 qm set $vm_num --ide2 ${storage}:cloudinit
 qm set $vm_num --nameserver ${dns}
-user_ip="${netmask}.${num}"
+user_ip="${netip}"
 qm set $vm_num --ipconfig0 ip=${user_ip}/24,gw=${netgw}
 qm set $vm_num --cipassword $password --ciuser $user
 # qm set $vm_num --agent 1
@@ -127,9 +129,9 @@ if [ ! -f "/etc/iptables/rules.v4" ]; then
 fi
 iptables-save > /etc/iptables/rules.v4
 service netfilter-persistent restart
-echo "$vm_num $user $password $core $memory $disk $sshn $port_first $port_last $system $storage $vmbr $netmask $netgw $dns" >> "vm${vm_num}"
+echo "$vm_num $user $password $core $memory $disk $sshn $port_first $port_last $system $storage $vmbr $user_ip " >> "vm${vm_num}"
 # 虚拟机的相关信息将会存储到对应的虚拟机的NOTE中，可在WEB端查看
-data=$(echo " VMID 用户名-username 密码-password CPU核数-CPU 内存-memory 硬盘-disk SSH端口 外网端口起-port-start 外网端口止-port-end 系统-system 存储盘-storage 网桥-vmbr IP段-172.103.0 网关-172.103.0.1 DNS-223.5.5.5")
+data=$(echo " VMID 用户名-username 密码-password CPU核数-CPU 内存-memory 硬盘-disk SSH端口 外网端口起-port-start 外网端口止-port-end 系统-system 存储盘-storage 网桥-vmbr IP")
 values=$(cat "vm${vm_num}")
 IFS=' ' read -ra data_array <<< "$data"
 IFS=' ' read -ra values_array <<< "$values"
